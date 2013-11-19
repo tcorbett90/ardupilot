@@ -73,7 +73,7 @@ static Location rally_location_to_location(const RallyLocation &r_loc, const Loc
     //Currently can't do true AGL on the APM.  Relative altitudes are
     //relative to HOME point's altitude.  Terrain on the board is inbound
     //for the PX4, though.  This line will need to be updated when that happens:
-    ret.alt = (r_loc.alt*100UL) + homeloc.alt;
+    ret.alt = (r_loc.alt*100UL) + homeloc.alt; 
 
     ret.lat = r_loc.lat;
     ret.lng = r_loc.lng;
@@ -95,5 +95,27 @@ static Location rally_find_best_location(const Location &myloc, const Location &
         ret.alt = read_alt_to_hold();
     }
     return ret;
+}
+
+// Finds best landing location based on rally_loc
+static bool find_best_landing_wp(const Location &myloc, Location &landing_WP) {
+    // Start minimum distance at appx infinity
+    float min_distance = 9999.9;
+    int tmp_distance;
+    bool landing_wp_found = false;
+
+    // Go through all WayPoints looking for landing waypoints
+    for(int16_t i = 0;i<g.command_total+1;i++) {
+        Location tmp = get_cmd_with_index(i);
+        if(tmp.id == MAV_CMD_NAV_LAND) {
+           landing_wp_found = true;
+           tmp_distance = get_distance(tmp, myloc);
+           if(tmp_distance < min_distance) {
+              landing_WP = tmp;
+              min_distance = tmp_distance; 
+           }
+        }
+    }
+    return landing_wp_found;
 }
 

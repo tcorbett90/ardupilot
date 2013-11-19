@@ -233,9 +233,11 @@ static bool verify_condition_command()          // Returns true if command compl
 
 static void do_RTL(void)
 {
+    find_best_rally_point(current_loc,home,best_rally_loc);
+
     control_mode    = RTL;
     prev_WP = current_loc;
-    next_WP = rally_find_best_location(current_loc, home);
+    next_WP = rally_location_to_location(best_rally_loc,home);
 
     if (g.loiter_radius < 0) {
         loiter.direction = -1;

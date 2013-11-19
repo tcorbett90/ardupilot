@@ -655,6 +655,13 @@ static struct   Location next_nav_command;
 static struct   Location next_nonnav_command;
 
 ////////////////////////////////////////////////////////////////////////////////
+// RallyLocation 
+// RallyLocation structure defined in AP_Common
+////////////////////////////////////////////////////////////////////////////////
+// Used in one second loop to look for ideal rally location
+static struct RallyLocation best_rally_loc;
+
+////////////////////////////////////////////////////////////////////////////////
 // Altitude / Climb rate control
 ////////////////////////////////////////////////////////////////////////////////
 // The current desired altitude.  Altitude is linearly ramped between waypoints.  Centimeters
@@ -970,7 +977,7 @@ static void one_second_loop()
 {
     if (g.log_bitmask & MASK_LOG_CURRENT)
         Log_Write_Current();
-
+    
     // send a heartbeat
     gcs_send_message(MSG_HEARTBEAT);
 
@@ -1131,7 +1138,7 @@ static void handle_auto_mode(void)
         // max throttle for takeoff
         channel_throttle->servo_out = aparm.throttle_max;
         break;
-
+         
     case MAV_CMD_NAV_LAND:
         calc_nav_roll();
         
@@ -1172,6 +1179,59 @@ static void handle_auto_mode(void)
 }
 
 /*
+* Main for RTL mode handling
+*/
+static void handle_RTL_mode(void) 
+{
+    // Decide whether we have a valid landing point
+    Location landing_loc = rally_location_to_location(best_rally_loc,home);
+    if( !find_best_landing_wp(current_loc, landing_loc) ) {
+        gcs_send_text_P(SEVERITY_HIGH,PSTR("No landing location specified."));
+    }
+    // Calculate bearing in radians
+    float bearing = (radians( (float)(get_bearing_cd(current_loc,home)/100.0) ));
+
+    // Calculate heading
+    float heading = 0;
+    if (compass.read()) 
+    {
+        const Matrix3f &m = ahrs.get_dcm_matrix();
+        heading = compass.calculate_heading(m);
+        compass.null_offsets();
+        heading+=PI;
+    }
+
+    // Check Rally flag to see if AutoLand is set true
+    if( BIT_IS_SET(best_rally_loc.flags,2) ) 
+    {
+        int break_alt = (best_rally_loc.break_alt*100UL) + home.alt;
+        if(next_WP.alt != break_alt && get_distance(current_loc,rally_location_to_location(best_rally_loc,home))<100.0)
+        {
+            printf("Setting Break Alt");
+            next_WP.alt = break_alt;
+        }
+
+        // Check to see if the the plane is heading towards the home_loc and if it is break to land
+        if( (bearing >= PI   && bearing <= 2*PI && heading < (bearing-PI+.2) && heading > bearing-PI-.2) || 
+            (bearing >= 0.0  && bearing < PI    && heading < (bearing+PI+.2) && heading > bearing+PI-.2) ) 
+        {
+            // Check if were at break_alt +/- 20 meters
+            if( current_loc.alt > break_alt - 2000.0 && 
+                current_loc.alt < break_alt + 2000.0 ) 
+            {
+                
+                // Set command to LAND
+                nav_command_ID = MAV_CMD_NAV_LAND;
+                next_WP = landing_loc;    
+
+                //Process AUTO       
+                handle_auto_mode();
+            }
+        } 
+    }     
+}
+
+/*
   main flight mode dependent update code 
  */
 static void update_flight_mode(void)
@@ -1193,6 +1253,8 @@ static void update_flight_mode(void)
         break;
 
     case RTL:
+        handle_RTL_mode();
+
     case LOITER:
     case GUIDED:
         calc_nav_roll();
